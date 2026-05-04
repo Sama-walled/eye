@@ -1,7 +1,9 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
 import '../providers/language_provider.dart';
 import '../providers/results_provider.dart';
@@ -35,46 +37,90 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen>
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
 
-    _simulateAnalysis();
+    _performAnalysis();
   }
 
-  Future<void> _simulateAnalysis() async {
-    // Simulate AI processing (3-5 seconds)
-    await Future.delayed(const Duration(seconds: 4));
-
+  Future<void> _performAnalysis() async {
     if (!mounted) return;
 
-    // Generate fake result for demonstration
-    final random = math.Random();
-    final severityLevel = random.nextInt(5); // 0-4
-    final confidenceScore = 0.75 + (random.nextDouble() * 0.2); // 0.75-0.95
-    final hasDME = random.nextBool();
-    
     // Get current user ID
     final currentUser = ref.read(userProvider);
     final userId = currentUser?.id ?? '';
 
-    final result = ResultModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      userId: userId,
-      date: DateTime.now(),
-      severityLevel: severityLevel,
-      confidenceScore: confidenceScore,
-      hasDME: hasDME,
-      imagePath: widget.imagePath,
-    );
+    if (userId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: User not logged in')),
+        );
+        Navigator.pop(context);
+      }
+      return;
+    }
 
-    // Save result
-    await ref.read(resultsProvider.notifier).addResult(result);
+    try {
+      // Prepare the multipart request
+      final uri = Uri.parse('http://127.0.0.1:5000/api/predict');
+      final request = http.MultipartRequest('POST', uri);
+      
+      // Add patient_id
+      request.fields['patient_id'] = userId;
+      
+      // Add image file
+      final file = await http.MultipartFile.fromPath(
+        'image',
+        widget.imagePath,
+        filename: path.basename(widget.imagePath),
+      );
+      request.files.add(file);
 
-    // Navigate to results screen
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ResultsScreen(result: result),
-      ),
-    );
+      // Send request
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        // Map DR_grade to severity level (0-4)
+        int severityLevel = 0;
+        final drGrade = data['DR_grade'];
+        if (drGrade == "Mild") severityLevel = 1;
+        else if (drGrade == "Moderate") severityLevel = 2;
+        else if (drGrade == "Severe") severityLevel = 3;
+        else if (drGrade == "Proliferative DR") severityLevel = 4;
+
+        final result = ResultModel(
+          id: data['image_id'].toString(),
+          userId: userId,
+          date: DateTime.now(),
+          severityLevel: severityLevel,
+          confidenceScore: (data['confidence'] as num).toDouble() / 100.0,
+          hasDME: false, // DME not currently returned by API
+          imagePath: widget.imagePath,
+        );
+
+        // Save result locally for history
+        await ref.read(resultsProvider.notifier).addResult(result);
+
+        // Navigate to results screen
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ResultsScreen(result: result),
+          ),
+        );
+      } else {
+        throw Exception('Server returned ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      print("Analysis error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Analysis failed: $e')),
+        );
+        Navigator.pop(context);
+      }
+    }
   }
 
   @override

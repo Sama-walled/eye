@@ -395,5 +395,119 @@ def api_login():
     else:
         return jsonify({"error": "Invalid credentials"}), 401
 
+@app.route('/api/predict', methods=['POST'])
+def api_predict():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+    
+    file = request.files['image']
+    patient_id = request.form.get('patient_id')
+    
+    if not patient_id:
+        return jsonify({"error": "No patient_id provided"}), 400
+        
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    
+    if file:
+        try:
+            image_bytes = file.read()
+            image_array = preprocess_image(image_bytes)
+            
+            if image_array is None:
+                return jsonify({"error": "Failed to process image"}), 400
+            
+            predictions = model.predict(image_array)
+            predicted_class_idx = np.argmax(predictions[0])
+            confidence = float(np.max(predictions[0]))
+            predicted_class = class_names[predicted_class_idx]
+            
+            confidence_percentage = round(confidence * 100, 2)
+            
+            # Generate analysis text
+            analysis = ""
+            if predicted_class == "No DR":
+                analysis = "No diabetic retinopathy detected."
+            elif predicted_class == "Mild":
+                analysis = "Mild non-proliferative diabetic retinopathy detected."
+            elif predicted_class == "Moderate":
+                analysis = "Moderate non-proliferative diabetic retinopathy detected."
+            elif predicted_class == "Severe":
+                analysis = "Severe non-proliferative diabetic retinopathy detected."
+            elif predicted_class == "Proliferative DR":
+                analysis = "Proliferative diabetic retinopathy detected."
+
+            # Save file
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
+            unique_filename = f"{uuid.uuid4().hex}.{ext}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            
+            file.seek(0)
+            file.save(file_path)
+            
+            # Save Retinal Image
+            new_image = Retinal_Image(
+                Image_path=unique_filename,
+                patient_ID=int(patient_id),
+                Capture_Device='Flutter App'
+            )
+            db.session.add(new_image)
+            db.session.commit()
+            
+            # Save Grading
+            current_model = AI_Model.query.first()
+            new_grading = AI_Grading(
+                DR_Grade=predicted_class,
+                Confidence_Score=confidence_percentage,
+                Image_ID=new_image.Image_ID,
+                Model_ID=current_model.Model_ID if current_model else None
+            )
+            db.session.add(new_grading)
+            db.session.commit()
+            
+            return jsonify({
+                "DR_grade": predicted_class,
+                "confidence": confidence_percentage,
+                "analysis": analysis,
+                "image_id": new_image.Image_ID
+            }), 200
+            
+        except Exception as e:
+            print(f"API Prediction error: {e}")
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    patient_id = request.args.get('patient_id')
+    if not patient_id:
+        return jsonify({"error": "No patient_id provided"}), 400
+        
+    try:
+        # Fetch images and gradings for the patient
+        images = Retinal_Image.query.filter_by(patient_ID=int(patient_id)).all()
+        results = []
+        
+        for img in images:
+            grading = AI_Grading.query.filter_by(Image_ID=img.Image_ID).first()
+            if grading:
+                results.append({
+                    'image_id': img.Image_ID,
+                    'image_path': img.Image_path,
+                    'date': grading.Grading_Date.isoformat(),
+                    'dr_grade': grading.DR_Grade,
+                    'confidence': float(grading.Confidence_Score),
+                    'capture_device': img.Capture_Device
+                })
+        
+        # Sort by date descending
+        results.sort(key=lambda x: x['date'], reverse=True)
+        
+        return jsonify({"results": results}), 200
+        
+    except Exception as e:
+        print(f"API History error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

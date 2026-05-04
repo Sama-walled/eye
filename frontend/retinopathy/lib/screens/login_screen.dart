@@ -9,6 +9,8 @@ import '../models/user_model.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
 
+import 'package:http/http.dart' as http;
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -29,72 +31,71 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _isLoading = true;
       });
 
-      // Simulate login process
-      await Future.delayed(const Duration(seconds: 1));
+      try {
+        final uri = Uri.parse('http://127.0.0.1:5000/api/login');
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': _emailController.text,
+            'password': _passwordController.text,
+          }),
+        );
 
-      // Load user data from storage
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = prefs.getString('user_data');
-      UserModel? storedUser;
-      
-      if (userJson != null) {
-        try {
-          final Map<String, dynamic> decoded = jsonDecode(userJson);
-          storedUser = UserModel.fromJson(decoded);
-        } catch (e) {
-          // Error parsing user data
+        if (response.statusCode == 200) {
+          final responseData = jsonDecode(response.body);
+          final userData = responseData['user'];
+
+          // Create user model from response
+          final user = UserModel(
+            id: userData['id'].toString(),
+            name: userData['name'],
+            email: userData['email'],
+            password: _passwordController.text, // Keep password for local session if needed
+            createdAt: DateTime.now(), // Backend could return this, but using now for simplicity
+            lastLoginAt: DateTime.now(),
+          );
+
+          // Save user data using provider
+          await ref.read(userProvider.notifier).setUser(user);
+          await ref.read(userProvider.notifier).updateLastLogin();
+
+          // Set login status
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('is_logged_in', true);
+
+          // Reload results for this user
+          await ref.read(resultsProvider.notifier).reload();
+
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        } else {
+          final errorData = jsonDecode(response.body);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Login Failed: ${errorData['error']}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connection Error: Unable to reach the server.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
         }
       }
-      
-      // Check if user exists and verify credentials
-      if (storedUser != null && 
-          storedUser.email == _emailController.text &&
-          storedUser.password == _passwordController.text) {
-        // Password matches, load user and update last login time
-        await ref.read(userProvider.notifier).setUser(storedUser);
-        await ref.read(userProvider.notifier).updateLastLogin();
-        // Reload results for this user
-        await ref.read(resultsProvider.notifier).reload();
-      } else if (storedUser != null && 
-                 storedUser.email == _emailController.text &&
-                 storedUser.password != _passwordController.text) {
-        // Wrong password
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Incorrect password'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      } else {
-        // User not found
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('User not found. Please sign up first.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      await prefs.setBool('is_logged_in', true);
-
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
     }
   }
 

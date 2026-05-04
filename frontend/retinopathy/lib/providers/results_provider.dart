@@ -5,6 +5,8 @@ import '../models/result_model.dart';
 import '../models/user_model.dart';
 import 'user_provider.dart';
 
+import 'package:http/http.dart' as http;
+
 class ResultsNotifier extends StateNotifier<List<ResultModel>> {
   final Ref ref;
   ResultsNotifier(this.ref) : super([]) {
@@ -22,8 +24,46 @@ class ResultsNotifier extends StateNotifier<List<ResultModel>> {
       state = [];
       return;
     }
+
+    try {
+      // First try to fetch from API to get latest data from database
+      final uri = Uri.parse('http://127.0.0.1:5000/api/history?patient_id=${currentUser.id}');
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> resultsJson = data['results'];
+        
+        final apiResults = resultsJson.map((json) {
+          int severityLevel = 0;
+          final drGrade = json['dr_grade'];
+          if (drGrade == "Mild") severityLevel = 1;
+          else if (drGrade == "Moderate") severityLevel = 2;
+          else if (drGrade == "Severe") severityLevel = 3;
+          else if (drGrade == "Proliferative DR") severityLevel = 4;
+
+          return ResultModel(
+            id: json['image_id'].toString(),
+            userId: currentUser.id,
+            date: DateTime.parse(json['date']),
+            severityLevel: severityLevel,
+            confidenceScore: (json['confidence'] as num).toDouble() / 100.0,
+            hasDME: false,
+            imagePath: json['image_path'], // Note: This is just the filename
+          );
+        }).toList();
+
+        state = apiResults;
+        // Optionally update local cache too
+        await _saveResults();
+        return;
+      }
+    } catch (e) {
+      print("Error fetching history from API: $e");
+      // Fallback to local storage if API fails
+    }
     
-    // Load all results from storage
+    // Load all results from storage (fallback)
     final resultsJson = prefs.getString('results');
     if (resultsJson != null) {
       try {
