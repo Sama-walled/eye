@@ -26,8 +26,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
-login_manager.login_view = 'login'
-login_manager.login_message_category = 'info'
 
 # --- Database Models ---
 
@@ -158,172 +156,41 @@ ensure_ai_model_in_db()
 
 @app.route('/')
 def index():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-    return render_template('index.html')
+    return jsonify({
+        "status": "success",
+        "message": "Eye Disease Classification API is running",
+        "endpoints": {
+            "login": "/api/login",
+            "register": "/api/register",
+            "predict": "/api/predict",
+            "history": "/api/history"
+        }
+    })
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route('/register', methods=['POST'])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-        
-    if request.method == 'POST':
-        name = request.form.get('name')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        # Split name to first and last name
-        parts = name.split(' ', 1)
-        first_name = parts[0]
-        last_name = parts[1] if len(parts) > 1 else ""
-        
-        user_exists = Patient.query.filter_by(Email=email).first()
-        if user_exists:
-            flash('Email already registered.', 'error')
-            return redirect(url_for('register'))
-            
-        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-        new_patient = Patient(First_Name=first_name, Last_Name=last_name, Email=email, Password=hashed_password)
-        
-        db.session.add(new_patient)
-        db.session.commit()
-        
-        flash('Registration successful! You can now log in.', 'success')
-        return redirect(url_for('login'))
-        
-    return render_template('register.html')
+    # Alias for api_register
+    return api_register()
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-        
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        patient = Patient.query.filter_by(Email=email).first()
-        if patient and check_password_hash(patient.Password, password):
-            login_user(patient)
-            return redirect(url_for('index'))
-        else:
-            flash('Login failed. Please check your email and password.', 'error')
-            
-    return render_template('login.html')
+    # Alias for api_login
+    return api_login()
 
 @app.route('/logout')
-@login_required
 def logout():
     logout_user()
-    return redirect(url_for('login'))
+    return jsonify({"message": "Logged out successfully"}), 200
 
 @app.route('/history')
-@login_required
 def history():
-    # Fetch images and gradings for the current patient
-    images = Retinal_Image.query.filter_by(patient_ID=current_user.patient_ID).all()
-    predictions = []
-    
-    for img in images:
-        grading = AI_Grading.query.filter_by(Image_ID=img.Image_ID).first()
-        if grading:
-            analysis = ""
-            if grading.DR_Grade == "No DR":
-                analysis = "No diabetic retinopathy detected. Your eyes appear healthy, but regular check-ups are recommended."
-            elif grading.DR_Grade == "Mild":
-                analysis = "Mild non-proliferative diabetic retinopathy detected. Microaneurysms may be present. Please consult an eye specialist."
-            elif grading.DR_Grade == "Moderate":
-                analysis = "Moderate non-proliferative diabetic retinopathy detected. Disease is progressing. Prompt medical evaluation is necessary."
-            elif grading.DR_Grade == "Severe":
-                analysis = "Severe non-proliferative diabetic retinopathy detected. High risk of vision loss. Urgent medical attention required."
-            elif grading.DR_Grade == "Proliferative DR":
-                analysis = "Proliferative diabetic retinopathy detected. Advanced stage with new blood vessels growing. Immediate treatment is critical."
-                
-            predictions.append({
-                'image_path': img.Image_path,
-                'created_at': grading.Grading_Date,
-                'dr_grade': grading.DR_Grade,
-                'confidence': grading.Confidence_Score,
-                'analysis': analysis
-            })
-            
-    predictions.sort(key=lambda x: x['created_at'], reverse=True)
-    return render_template('history.html', predictions=predictions)
+    # Alias for api_history
+    return api_history()
 
 @app.route('/predict', methods=['POST'])
-@login_required
 def predict():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
-    
-    file = request.files['image']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-    
-    if file:
-        try:
-            image_bytes = file.read()
-            image_array = preprocess_image(image_bytes)
-            
-            if image_array is None:
-                return jsonify({"error": "Failed to process image"}), 400
-            
-            predictions = model.predict(image_array)
-            predicted_class_idx = np.argmax(predictions[0])
-            confidence = float(np.max(predictions[0]))
-            predicted_class = class_names[predicted_class_idx]
-            
-            analysis = ""
-            if predicted_class == "No DR":
-                analysis = "No diabetic retinopathy detected. Your eyes appear healthy."
-            elif predicted_class == "Mild":
-                analysis = "Mild non-proliferative diabetic retinopathy detected. Microaneurysms may be present."
-            elif predicted_class == "Moderate":
-                analysis = "Moderate non-proliferative diabetic retinopathy detected. Disease is progressing."
-            elif predicted_class == "Severe":
-                analysis = "Severe non-proliferative diabetic retinopathy detected. High risk of vision loss."
-            elif predicted_class == "Proliferative DR":
-                analysis = "Proliferative diabetic retinopathy detected. Advanced stage."
-                
-            confidence_percentage = round(confidence * 100, 2)
-            
-            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
-            unique_filename = f"{uuid.uuid4().hex}.{ext}"
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            
-            file.seek(0)
-            file.save(file_path)
-            
-            # Save Retinal Image
-            new_image = Retinal_Image(
-                Image_path=unique_filename,
-                patient_ID=current_user.patient_ID,
-                Capture_Device='Web Upload'
-            )
-            db.session.add(new_image)
-            db.session.commit()
-            
-            # Save Grading
-            current_model = AI_Model.query.first()
-            new_grading = AI_Grading(
-                DR_Grade=predicted_class,
-                Confidence_Score=confidence_percentage,
-                Image_ID=new_image.Image_ID,
-                Model_ID=current_model.Model_ID if current_model else None
-            )
-            db.session.add(new_grading)
-            db.session.commit()
-            
-            return jsonify({
-                "DR_grade": predicted_class,
-                "confidence": confidence_percentage,
-                "analysis": analysis
-            })
-            
-        except Exception as e:
-            print(f"Prediction error: {e}")
-            db.session.rollback()
-            return jsonify({"error": "Error making prediction and saving to database"}), 500
+    # Alias for api_predict
+    return api_predict()
 
 # --- API Endpoints for Flutter ---
 
