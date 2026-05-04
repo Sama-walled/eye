@@ -4,6 +4,8 @@ import 'dart:convert';
 import '../models/result_model.dart';
 import '../models/user_model.dart';
 import 'user_provider.dart';
+import '../constants.dart';
+
 
 import 'package:http/http.dart' as http;
 
@@ -27,7 +29,7 @@ class ResultsNotifier extends StateNotifier<List<ResultModel>> {
 
     try {
       // First try to fetch from API to get latest data from database
-      final uri = Uri.parse('http://127.0.0.1:5000/api/history?patient_id=${currentUser.id}');
+      final uri = Uri.parse('${ApiConstants.historyUrl}?patient_id=${currentUser.id}');
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {

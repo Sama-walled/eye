@@ -8,6 +8,8 @@ import '../providers/results_provider.dart';
 import '../models/user_model.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
+import '../constants.dart';
+
 
 import 'package:http/http.dart' as http;
 
@@ -32,7 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       });
 
       try {
-        final uri = Uri.parse('http://127.0.0.1:5000/api/login');
+        final uri = Uri.parse(ApiConstants.loginUrl);
         final response = await http.post(
           uri,
           headers: {'Content-Type': 'application/json'},

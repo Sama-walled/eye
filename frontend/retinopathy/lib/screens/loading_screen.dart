@@ -10,7 +10,9 @@ import '../providers/results_provider.dart';
 import '../providers/user_provider.dart';
 import '../models/result_model.dart';
 import 'results_screen.dart';
+import '../constants.dart';
 
+import 'dart:math' as math;
 class LoadingScreen extends ConsumerStatefulWidget {
   final String imagePath;
 
@@ -59,7 +61,7 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen>
 
     try {
       // Prepare the multipart request
-      final uri = Uri.parse('http://127.0.0.1:5000/api/predict');
+      final uri = Uri.parse(ApiConstants.predictUrl);
       final request = http.MultipartRequest('POST', uri);
       
       // Add patient_id

@@ -7,6 +7,8 @@ import '../theme/app_theme.dart';
 import '../providers/user_provider.dart';
 import '../models/user_model.dart';
 import 'home_screen.dart';
+import '../constants.dart';
+
 
 class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
@@ -45,7 +47,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       try {
         // Send actual API request to the Flask backend!
         // Note: For Android Emulator, use 10.0.2.2. For Desktop/Web, use 127.0.0.1.
-        final uri = Uri.parse('http://127.0.0.1:5000/api/register');
+        final uri = Uri.parse(ApiConstants.registerUrl);
         
         final response = await http.post(
           uri,

@@ -1,0 +1,45 @@
+# Flutter/Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/pubspec.lock
+**/*.iml
+**/.idea/
+**/.vscode/
+
+# Android
+**/android/app/local.properties
+**/android/app/GeneratedPluginRegistrant.java
+**/.gradle/
+
+# iOS/macOS
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
+**/ios/Runner/GeneratedPluginRegistrant.[hm]
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Linux/Windows
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/.env
+**/.venv
+**/env/
+**/venv/
+**/ENV/
+
+# Flask
+**/flask_app/static/uploads/
+**/flask_app/static/predictions/
+
+# OS
+.DS_Store
+Thumbs.db
